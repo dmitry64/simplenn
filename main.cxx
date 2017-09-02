@@ -6,22 +6,25 @@
 #include <cmath>
 #include <chrono>
 
-static double eta = 0.15;
-static double alpha = 0.5;
+const static double eta = 0.15;
+const static double alpha = 0.5;
 
-struct Connection {
-    double weight;
-    double deltaWeight;
-};
+const static unsigned int InputNodesCount = 3;
+const static unsigned int OutputNodesCount = 1;
+
+typedef std::array<double, InputNodesCount> InputValues;
+typedef std::array<double, OutputNodesCount> OutputValues;
+typedef std::pair<InputValues, OutputValues> IO;
+typedef std::vector<unsigned int> Topology;
 
 class Neuron;
-
 typedef std::vector<Neuron> Layer;
-typedef std::array<double,2> InputValues;
-typedef std::array<double,1> OutputValues;
-typedef std::pair<InputValues, OutputValues> IO;
 
 class Neuron{
+    struct Connection {
+        double weight;
+        double deltaWeight;
+    };
 public:
     Neuron(unsigned int numOutputs, unsigned int myIndex);
     void setOutputVal(double val) { _outValue = val; }
@@ -116,7 +119,7 @@ double Neuron::sumDOW(const Layer &nextLayer)
 
 class NeuralNet{
 public:
-    NeuralNet(const std::vector<unsigned int> & topology);
+    NeuralNet(const Topology & topology);
     void feedForward(const InputValues & inputVals);
     void backProp(const OutputValues &targetVals);
     void getResults(OutputValues &resultVals) const;
@@ -128,9 +131,9 @@ private:
     double _recentAverageError;
 };
 
-NeuralNet::NeuralNet(const std::vector<unsigned int> &topology)
+NeuralNet::NeuralNet(const Topology &topology)
 {
-    unsigned int numLayers = topology.size();
+    unsigned int numLayers = static_cast<unsigned int>(topology.size());
     for(unsigned int layerNum = 0; layerNum < numLayers; ++layerNum) {
         Layer layer;
         unsigned int numOutputs = layerNum == topology.size() - 1 ? 0 : topology[layerNum + 1];
@@ -144,7 +147,7 @@ NeuralNet::NeuralNet(const std::vector<unsigned int> &topology)
 
 void NeuralNet::feedForward(const InputValues &inputVals)
 {
-    unsigned int size = inputVals.size();
+    unsigned int size = static_cast<unsigned int>(inputVals.size());
     assert(size == _layers[0].size() - 1);
 
     for(unsigned int i = 0; i < size; ++i) {
@@ -166,6 +169,7 @@ void NeuralNet::feedForward(const InputValues &inputVals)
 
 void NeuralNet::backProp(const OutputValues &targetVals)
 {
+    assert(_layers.size() > 1);
     Layer & outputLayer = _layers.back();
     _error = 0.0;
     for(unsigned int n = 0; n < outputLayer.size() - 1; ++n) {
@@ -208,7 +212,7 @@ void NeuralNet::getResults(OutputValues &resultVals) const
 
 void NeuralNet::printDebug() const
 {
-    std::cout << std::setprecision(8) << std::fixed  << "error: " << _error
+    std::cout << std::setprecision(8) << std::fixed  << "Learning error: " << _error
               << " average: " << _recentAverageError << '\n';
 }
 
@@ -216,23 +220,31 @@ int main()
 {
     std::cout << "Starting neural network simulation...\n";
 
-    std::vector<unsigned int> topology {2,3,1};
+    // Neural net topology:
+    // O*O\
+    // O*O-O
+    // O*O/
+    Topology topology {InputNodesCount, 3, OutputNodesCount};
+
     NeuralNet nn(topology);
 
+    // Training set
     std::vector<IO> data;
 
-    data.push_back(IO(InputValues({{0,0}}),OutputValues({{0}})));
-    data.push_back(IO(InputValues({{1,1}}),OutputValues({{1}})));
-    data.push_back(IO(InputValues({{1,0}}),OutputValues({{0}})));
-    data.push_back(IO(InputValues({{0,1}}),OutputValues({{0}})));
-    data.push_back(IO(InputValues({{0,0}}),OutputValues({{0}})));
-    data.push_back(IO(InputValues({{1,0}}),OutputValues({{0}})));
-    data.push_back(IO(InputValues({{1,1}}),OutputValues({{1}})));
-    data.push_back(IO(InputValues({{0,1}}),OutputValues({{0}})));
+    // A && B && C
+    data.push_back(IO(InputValues({{0,0,0}}),OutputValues({{0}})));
+    data.push_back(IO(InputValues({{0,0,1}}),OutputValues({{0}})));
+    data.push_back(IO(InputValues({{0,1,0}}),OutputValues({{0}})));
+    data.push_back(IO(InputValues({{0,1,1}}),OutputValues({{0}})));
+    data.push_back(IO(InputValues({{1,0,0}}),OutputValues({{0}})));
+    data.push_back(IO(InputValues({{1,0,1}}),OutputValues({{0}})));
+    data.push_back(IO(InputValues({{1,1,0}}),OutputValues({{0}})));
+    data.push_back(IO(InputValues({{1,1,1}}),OutputValues({{1}})));
 
     auto start = std::chrono::system_clock::now();
 
-    for(int i = 0; i<1000000; ++i) {
+    // Learning...
+    for(unsigned int i = 0; i<1000000; ++i) {
         for(auto & pair : data) {
             nn.feedForward(pair.first);
             nn.backProp(pair.second);
@@ -241,19 +253,22 @@ int main()
 
     auto end = std::chrono::system_clock::now();
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    std::cout << elapsed.count() << " ms\n";
+    std::cout << "Learning done! time: " << elapsed.count() << " ms\n";
 
     nn.printDebug();
 
-    InputValues inputVals { {1.0, 0.0} };
+    // Test our neural net
+    InputValues inputVals { {1.0, 1.0, 1.0} }; // 1 && 1 && 1 = 1
     nn.feedForward(inputVals);
 
     OutputValues resultVals;
     nn.getResults(resultVals);
 
     for(auto val : resultVals) {
-        std::cout << "result: " << std::setprecision (3) <<  std::fixed  << (val) << "\n";
+        std::cout << "Result: " << std::setprecision (3) <<  std::fixed  << (val) << "\n";
     }
+
+    std::cout << "Simulation finished!" << std::endl;
 
     return 0;
 }
