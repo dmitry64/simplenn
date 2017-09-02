@@ -9,17 +9,19 @@
 #include <cassert>
 #include <cmath>
 
+using FloatingPointType = double;
+
 struct NeuralNetParams {
-    const double _eta;
-    const double _alpha;
-    NeuralNetParams (double eta, double alpha) : _eta(eta), _alpha(alpha) { }
+    const FloatingPointType _eta;
+    const FloatingPointType _alpha;
+    NeuralNetParams (FloatingPointType eta, FloatingPointType alpha) : _eta(eta), _alpha(alpha) { }
 };
 
 class Neuron {
     const NeuralNetParams & _params;
     struct Connection {
-        double weight;
-        double deltaWeight;
+        FloatingPointType weight;
+        FloatingPointType deltaWeight;
     };
 public:
     using Layer = std::vector<Neuron>;
@@ -37,17 +39,17 @@ public:
             _outputWeights.push_back(connection);
         }
     }
-    void setOutputVal(double val) { _outValue = val; }
-    double getOutputVal() const { return _outValue; }
+    void setOutputVal(FloatingPointType val) { _outValue = val; }
+    FloatingPointType getOutputVal() const { return _outValue; }
     void feedForward(const Layer &prevLayer)
     {
-        double sum = 0.0;
+        FloatingPointType sum = 0.0;
         for(auto & neuron : prevLayer) {
             sum += neuron.getWeightedOutputForIndex(_myIndex);
         }
         _outValue = Neuron::transferFunction(sum);
     }
-    void calcOutputGradients(double targetVal)
+    void calcOutputGradients(FloatingPointType targetVal)
     {
         _gradient = (targetVal - _outValue) * Neuron::transferDerivative(_outValue);
     }
@@ -59,46 +61,46 @@ public:
     {
         for(auto & neuron : prevLayer) {
             Connection & curConnection = neuron._outputWeights[_myIndex];
-            double newDeltaWeight = _params._eta * neuron.getOutputVal() * _gradient + _params._alpha * curConnection.deltaWeight;
+            FloatingPointType newDeltaWeight = _params._eta * neuron.getOutputVal() * _gradient + _params._alpha * curConnection.deltaWeight;
             curConnection.deltaWeight = newDeltaWeight;
             curConnection.weight += newDeltaWeight;
         }
     }
-    double getWeightedOutputForIndex(unsigned int index) const
+    FloatingPointType getWeightedOutputForIndex(unsigned int index) const
     {
         return _outValue * _outputWeights[index].weight;
     }
 private:
-    static double transferFunction(double x)
+    static FloatingPointType transferFunction(FloatingPointType x)
     {
         return tanh(x);
     }
-    static double transferDerivative(double x)
+    static FloatingPointType transferDerivative(FloatingPointType x)
     {
         return 1.0 - x * x;
     }
-    static double randomWeight()
+    static FloatingPointType randomWeight()
     {
-        return double(rand()) / double(RAND_MAX);
+        return FloatingPointType(rand()) / FloatingPointType(RAND_MAX);
     }
-    double sumDOW(const Layer & nextLayer)
+    FloatingPointType sumDOW(const Layer & nextLayer)
     {
-        double sum = 0.0;
+        FloatingPointType sum = 0.0;
         for(unsigned int n = 0; n < nextLayer.size() - 1; ++n) {
             sum += _outputWeights[n].weight * nextLayer[n]._gradient;
         }
         return sum;
     }
     unsigned int _myIndex;
-    double _outValue;
-    double _gradient;
+    FloatingPointType _outValue;
+    FloatingPointType _gradient;
     std::vector<Connection> _outputWeights;
 };
 
 class NeuralNet {
 public:
-    using InputValues = std::vector<double>;
-    using OutputValues = std::vector<double>;
+    using InputValues = std::vector<FloatingPointType>;
+    using OutputValues = std::vector<FloatingPointType>;
     using NeuronType = Neuron;
     using Layer = std::vector<Neuron>;
     using Layers = std::vector<Layer>;
@@ -107,6 +109,7 @@ public:
 
     NeuralNet(const Topology & topology, NeuralNetParams & params) : _params(params)
     {
+        assert(topology.size());
         unsigned int numLayers = static_cast<unsigned int>(topology.size());
         for(unsigned int layerNum = 0; layerNum < numLayers; ++layerNum) {
             Layer layer;
@@ -121,7 +124,7 @@ public:
     void feedForward(const InputValues & inputVals)
     {
         unsigned int size = static_cast<unsigned int>(inputVals.size());
-        assert(size == _layers[0].size() - 1);
+        assert(size == _layers.front().size() - 1);
 
         for(unsigned int i = 0; i < size; ++i) {
             _layers[0][i].setOutputVal(inputVals[i]);
@@ -141,11 +144,11 @@ public:
     }
     void backProp(const OutputValues &targetVals)
     {
-        assert(_layers.size() > 1);
+        assert(targetVals.size() == _layers.back().size() - 1);
         Layer & outputLayer = _layers.back();
         _error = 0.0;
         for(unsigned int n = 0; n < outputLayer.size() - 1; ++n) {
-            double delta = targetVals[n] - outputLayer[n].getOutputVal();
+            FloatingPointType delta = targetVals[n] - outputLayer[n].getOutputVal();
             _error += delta * delta;
         }
         _error /= outputLayer.size() - 1;
@@ -189,9 +192,9 @@ public:
 private:
     const NeuralNetParams _params;
     Layers _layers;
-    double _error;
-    double _recentAverageSmoothingFactor;
-    double _recentAverageError;
+    FloatingPointType _error;
+    FloatingPointType _recentAverageSmoothingFactor;
+    FloatingPointType _recentAverageError;
 };
 
 #endif // SIMPLENEURALNET_HPP
