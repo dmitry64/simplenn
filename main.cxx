@@ -17,8 +17,9 @@ struct Connection {
 class Neuron;
 
 typedef std::vector<Neuron> Layer;
-typedef std::vector<double> Values;
-typedef std::pair<Values,Values> IO;
+typedef std::array<double,2> InputValues;
+typedef std::array<double,1> OutputValues;
+typedef std::pair<InputValues, OutputValues> IO;
 
 class Neuron{
 public:
@@ -29,6 +30,7 @@ public:
     void calcOutputGradients(double targetVal);
     void calcHiddenGradients(const Layer &nextLayer);
     void updateInputWeights(Layer &prevLayer) const;
+    double getWeightedOutputForIndex(unsigned int index) const;
 private:
     static double transferFunction(double x);
     static double transferDerivative(double x);
@@ -57,11 +59,9 @@ Neuron::Neuron(unsigned int numOutputs, unsigned int myIndex)
 void Neuron::feedForward(const Layer &prevLayer)
 {
     double sum = 0.0;
-
-    for(auto & neuron : prevLayer ) {
-        sum += neuron.getOutputVal() * neuron._outputWeights[_myIndex].weight;
+    for(auto & neuron : prevLayer) {
+        sum += neuron.getWeightedOutputForIndex(_myIndex);
     }
-
     _outValue = Neuron::transferFunction(sum);
 }
 
@@ -85,6 +85,11 @@ void Neuron::updateInputWeights(Layer &prevLayer) const
     }
 }
 
+double Neuron::getWeightedOutputForIndex(unsigned int index) const
+{
+    return _outValue * _outputWeights[index].weight;
+}
+
 double Neuron::transferFunction(double x)
 {
     return tanh(x);
@@ -103,19 +108,18 @@ double Neuron::randomWeight()
 double Neuron::sumDOW(const Layer &nextLayer)
 {
     double sum = 0.0;
-    for(unsigned int n =0; n < nextLayer.size() - 1; ++n) {
+    for(unsigned int n = 0; n < nextLayer.size() - 1; ++n) {
         sum += _outputWeights[n].weight * nextLayer[n]._gradient;
     }
-
     return sum;
 }
 
 class NeuralNet{
 public:
     NeuralNet(const std::vector<unsigned int> & topology);
-    void feedForward(const Values & inputVals);
-    void backProp(const Values & targetVals);
-    void getResults(Values &resultVals) const;
+    void feedForward(const InputValues & inputVals);
+    void backProp(const OutputValues &targetVals);
+    void getResults(OutputValues &resultVals) const;
     void printDebug() const;
 private:
     std::vector<Layer> _layers;
@@ -130,7 +134,6 @@ NeuralNet::NeuralNet(const std::vector<unsigned int> &topology)
     for(unsigned int layerNum = 0; layerNum < numLayers; ++layerNum) {
         Layer layer;
         unsigned int numOutputs = layerNum == topology.size() - 1 ? 0 : topology[layerNum + 1];
-
         for(unsigned int num = 0; num <= topology[layerNum]; ++num) {
             layer.push_back(Neuron(numOutputs, num));
         }
@@ -139,7 +142,7 @@ NeuralNet::NeuralNet(const std::vector<unsigned int> &topology)
     }
 }
 
-void NeuralNet::feedForward(const Values &inputVals)
+void NeuralNet::feedForward(const InputValues &inputVals)
 {
     unsigned int size = inputVals.size();
     assert(size == _layers[0].size() - 1);
@@ -148,31 +151,32 @@ void NeuralNet::feedForward(const Values &inputVals)
         _layers[0][i].setOutputVal(inputVals[i]);
     }
 
-    for(unsigned int layerNum = 1; layerNum < _layers.size(); ++layerNum) {
-        Layer & layer = _layers[layerNum];
-        Layer & prevLayer = _layers[layerNum - 1];
-
-        for(unsigned int n = 0; n < layer.size() - 1; ++n) {
-            layer[n].feedForward(prevLayer);
+    auto it1 = _layers.begin();
+    auto it2 = _layers.begin() + 1;
+    while( it2!=_layers.end() ) {
+        Layer & prevLayer = it1.operator*();
+        Layer & layer = it2.operator*();
+        for(auto it=layer.begin(); it!=layer.end() - 1; ++it) {
+            it.operator*().feedForward(prevLayer);
         }
+        ++it2;
+        ++it1;
     }
 }
 
-void NeuralNet::backProp(const Values &targetVals)
+void NeuralNet::backProp(const OutputValues &targetVals)
 {
     Layer & outputLayer = _layers.back();
-    const unsigned int size = outputLayer.size() - 1;
     _error = 0.0;
-    for(unsigned n = 0; n < size; ++n) {
+    for(unsigned int n = 0; n < outputLayer.size() - 1; ++n) {
         double delta = targetVals[n] - outputLayer[n].getOutputVal();
         _error += delta * delta;
     }
-    _error /= size;
+    _error /= outputLayer.size() - 1;
     _error = sqrt(_error);
-
     _recentAverageError = (_recentAverageError * _recentAverageSmoothingFactor + _error) / (_recentAverageSmoothingFactor + 1.0);
 
-    for(unsigned int n = 0; n < size; ++n) {
+    for(unsigned int n = 0; n < outputLayer.size() - 1; ++n) {
         outputLayer[n].calcOutputGradients(targetVals[n]);
     }
 
@@ -185,21 +189,20 @@ void NeuralNet::backProp(const Values &targetVals)
         }
     }
 
-    for(unsigned int layerNum = _layers.size() - 1; layerNum > 0; --layerNum) {
-        const Layer & layer = _layers[layerNum];
-        Layer & prevLayer = _layers[layerNum - 1];
+    for(auto it2 = _layers.rbegin(); it2 != _layers.rend() - 1; ++it2) {
+        const Layer & layer = it2.operator*();
+        Layer & prevLayer = (it2 + 1).operator*();
 
-        for(unsigned int n = 0; n < layer.size() - 1; ++n) {
-            layer[n].updateInputWeights(prevLayer);
+        for(auto it = layer.begin(); it != layer.end() - 1; ++it) {
+            it.operator*().updateInputWeights(prevLayer);
         }
     }
 }
 
-void NeuralNet::getResults(Values &resultVals) const
+void NeuralNet::getResults(OutputValues &resultVals) const
 {
-    resultVals.clear();
     for(unsigned int n = 0; n < _layers.back().size() - 1; ++n) {
-        resultVals.push_back(_layers.back()[n].getOutputVal());
+        resultVals.at(n) = (_layers.back()[n].getOutputVal());
     }
 }
 
@@ -218,14 +221,14 @@ int main()
 
     std::vector<IO> data;
 
-    data.push_back(IO(Values({0,0}),Values({0})));
-    data.push_back(IO(Values({1,1}),Values({1})));
-    data.push_back(IO(Values({1,0}),Values({0})));
-    data.push_back(IO(Values({0,1}),Values({0})));
-    data.push_back(IO(Values({0,0}),Values({0})));
-    data.push_back(IO(Values({1,0}),Values({0})));
-    data.push_back(IO(Values({1,1}),Values({1})));
-    data.push_back(IO(Values({0,1}),Values({0})));
+    data.push_back(IO(InputValues({{0,0}}),OutputValues({{0}})));
+    data.push_back(IO(InputValues({{1,1}}),OutputValues({{1}})));
+    data.push_back(IO(InputValues({{1,0}}),OutputValues({{0}})));
+    data.push_back(IO(InputValues({{0,1}}),OutputValues({{0}})));
+    data.push_back(IO(InputValues({{0,0}}),OutputValues({{0}})));
+    data.push_back(IO(InputValues({{1,0}}),OutputValues({{0}})));
+    data.push_back(IO(InputValues({{1,1}}),OutputValues({{1}})));
+    data.push_back(IO(InputValues({{0,1}}),OutputValues({{0}})));
 
     auto start = std::chrono::system_clock::now();
 
@@ -242,10 +245,10 @@ int main()
 
     nn.printDebug();
 
-    Values inputVals { 1.0, 1.0 };
+    InputValues inputVals { {1.0, 0.0} };
     nn.feedForward(inputVals);
 
-    Values resultVals;
+    OutputValues resultVals;
     nn.getResults(resultVals);
 
     for(auto val : resultVals) {
